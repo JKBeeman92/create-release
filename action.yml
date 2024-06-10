@@ -1,0 +1,12 @@
+name: 'Create Release'
+description: 'Create a release with a tag equal to the PR title with spaces removed'
+inputs:
+  title:
+    description: 'PR title'
+    required: true
+  token:
+    description: 'GitHub token'
+    required: true
+runs:
+  using: 'node20'
+  main: 'index.js'
