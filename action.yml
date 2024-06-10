@@ -1,5 +1,9 @@
 name: 'Create Release'
 description: 'Create a release with a tag equal to the PR title with spaces removed'
+author: 'Your Name'
+branding:
+  icon: 'package'
+  color: 'green'
 inputs:
   title:
     description: 'PR title'
