@@ -7,7 +7,7 @@ async function run() {
         const token = core.getInput('token');
 
         // Remove spaces and other invalid characters from PR title and create a tag
-        const tagName = title.replace(/[\s~^:?*[\]\/.@{}\\]/g, '');
+        const tagName = title.replace(/[\s~^:?*[\]\/@{}\\]/g, '');
 
         const octokit = github.getOctokit(token);
 
