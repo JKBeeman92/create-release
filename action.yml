@@ -1,16 +1,33 @@
 name: 'Create Release from PR Title'
-description: 'Create a release with a tag equal to the PR title with spaces removed'
-author: 'Your Name'
+description: 'Creates a GitHub release using semver version data from the PR Semver Labeler action'
+author: 'JKBeeman92'
 branding:
   icon: 'package'
   color: 'green'
 inputs:
   title:
-    description: 'PR title'
+    description: 'PR title — used as the human-readable release name'
     required: true
   token:
     description: 'GitHub token'
     required: true
+  semver:
+    description: 'Full semver string from the semver-labeling action (e.g. "2.3.1" or "2.3.1-beta.1"). When provided, this is used as the tag instead of deriving one from the title.'
+    required: false
+    default: ''
+  semver_type:
+    description: 'Release type from the semver-labeling action: "major", "minor", "patch", or "pre-release". Used to set the prerelease flag on the GitHub release.'
+    required: false
+    default: ''
+  tag_prefix:
+    description: 'Prefix to prepend to the semver tag (e.g. "v" produces "v2.3.1"). Only applies when semver input is provided.'
+    required: false
+    default: 'v'
+outputs:
+  release_url:
+    description: 'URL of the created GitHub release'
+  tag_name:
+    description: 'The tag name used for the release'
 runs:
   using: 'node20'
   main: 'index.js'
