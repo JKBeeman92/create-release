@@ -49,4 +49,9 @@ async function run() {
     }
 }
 
-run();
+module.exports = { run };
+
+// Only execute when run directly as an action (not during tests)
+if (require.main === module) {
+    run();
+}
