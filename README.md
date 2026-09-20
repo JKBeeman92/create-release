@@ -86,14 +86,22 @@ If used without the semver-labeling action, the tag is derived from the PR title
 - Branching: `main` is the release branch (tags are cut from here);
   `develop` is the integration branch; feature/fix work branches off
   `develop` and merges back via PR. See `CLAUDE.md` for details.
+- PR title conventions (enforced by CI): PRs into `develop` follow
+  [Conventional Commits](https://www.conventionalcommits.org/)
+  (`feat: ...`, `fix: ...`, etc.); PRs into `main` use a versioned title
+  (`vX.Y.Z - description`), since that's what drives the release below.
+  See `CLAUDE.md` for the full convention.
 - Before merging a Dependabot PR, check whether the target version is a
   breaking major (this repo has been bitten by ESM-only major bumps in
   `@actions/core` and `@actions/github` before) — see `CLAUDE.md`.
 
 ## Versioning
 
-Consumers pin a major version tag (`@v1`). On every GitHub Release
-published from this repo (see `.github/workflows/move-major-tag.yml`),
-that release's major version tag (`v1`, `v2`, ...) is automatically moved
-to point at the new release, so `@v1` always resolves to the latest
-non-prerelease `v1.x.y`.
+`.github/workflows/release.yml` runs on every PR merged into `main`, uses
+[`semver-labeling`](https://github.com/jkbeeman92/semver-labeling) to
+parse the (versioned) PR title, and runs this repo's own code directly
+(`uses: ./`, not the published `@v1` tag — avoids depending on a prior
+release to publish the next one) to publish the GitHub Release — no manual
+release step. `.github/workflows/move-major-tag.yml` then force-moves that
+release's major version tag (`v1`, `v2`, ...) to point at it, so consumers
+pinned to `@v1` always resolve to the latest non-prerelease `v1.x.y`.
