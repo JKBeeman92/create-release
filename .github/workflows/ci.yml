@@ -17,21 +17,26 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Syntax / module-load check
-        run: node --check index.js
+        run: node --check index.js && node --check src/deriveRelease.js
 
-      - name: Install dependencies and check for drift
+      - name: Unit tests
+        run: npm test
+
+      - name: Build bundle and check for drift
         run: |
-          npm install
-          if [ -n "$(git status --porcelain package.json package-lock.json node_modules)" ]; then
-            echo "::error::npm install produced changes that are not committed."
-            echo "This repo commits node_modules directly (no bundler) — the" \
-                 "runtime it ships must match what 'npm install' produces from" \
-                 "package.json/package-lock.json. Run 'npm install' locally and" \
-                 "commit the result."
-            git status --porcelain package.json package-lock.json node_modules
-            git diff --stat -- package.json package-lock.json node_modules
+          npm run build
+          if [ -n "$(git status --porcelain dist)" ]; then
+            echo "::error::'npm run build' produced a dist/ that doesn't match what's committed."
+            echo "action.yml points at dist/index.js — it must be rebuilt and committed" \
+                 "whenever index.js, src/, or a dependency changes. Run 'npm run build'" \
+                 "locally and commit the result."
+            git status --porcelain dist
             exit 1
           fi
 
@@ -43,8 +48,9 @@ jobs:
           INPUT_SEMVER="1.2.3-beta.1" \
           INPUT_SEMVER_TYPE="pre-release" \
           INPUT_TAG_PREFIX="v" \
+          INPUT_SKIP_EXISTING="false" \
           GITHUB_REPOSITORY="${{ github.repository }}" \
-          node index.js > semver-run.log 2>&1
+          node dist/index.js > semver-run.log 2>&1
           cat semver-run.log
           if grep -qE "ERR_REQUIRE_ESM|Cannot find module|SyntaxError" semver-run.log; then
             echo "::error::Module loading failed — see log above."
@@ -64,8 +70,9 @@ jobs:
           INPUT_SEMVER="" \
           INPUT_SEMVER_TYPE="" \
           INPUT_TAG_PREFIX="v" \
+          INPUT_SKIP_EXISTING="false" \
           GITHUB_REPOSITORY="${{ github.repository }}" \
-          node index.js > title-run.log 2>&1
+          node dist/index.js > title-run.log 2>&1
           cat title-run.log
           if grep -qE "ERR_REQUIRE_ESM|Cannot find module|SyntaxError" title-run.log; then
             echo "::error::Module loading failed — see log above."
@@ -77,10 +84,27 @@ jobs:
           fi
           echo "title fallback path OK (API call failure past this point is expected without a real token)"
 
+      - name: Run action — invalid semver_type is rejected
+        run: |
+          set +e
+          INPUT_TITLE="irrelevant" \
+          INPUT_TOKEN="dummy-token" \
+          INPUT_SEMVER="1.0.0" \
+          INPUT_SEMVER_TYPE="not-a-real-type" \
+          INPUT_TAG_PREFIX="v" \
+          INPUT_SKIP_EXISTING="false" \
+          GITHUB_REPOSITORY="${{ github.repository }}" \
+          node dist/index.js > invalid-run.log 2>&1
+          cat invalid-run.log
+          if ! grep -q "Invalid semver_type" invalid-run.log; then
+            echo "::error::Expected semver_type validation to reject an unknown value."
+            exit 1
+          fi
+
       - name: action.yml / README input-output consistency
         run: |
           missing=0
-          for input in title token semver semver_type tag_prefix; do
+          for input in title token semver semver_type tag_prefix skip_existing; do
             if ! grep -q "\`$input\`" README.md; then
               echo "::error::Input '$input' from action.yml not documented in README.md"
               missing=1

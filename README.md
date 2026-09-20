@@ -2,7 +2,7 @@
 
 Creates a GitHub release using semver version data from the [PR Semver Labeler](https://github.com/jkbeeman92/semver-labeling) action. Can also be used standalone by deriving a tag from the PR title.
 
-Published on the GitHub Marketplace as `jkbeeman92/create-release`. Runs on Node 20 as an ES module; `node_modules` is committed directly (no bundling step), so what's on `main` is exactly what runs.
+Published on the GitHub Marketplace as `jkbeeman92/create-release`. Runs on Node 20 as an ES module; the action is bundled with [`ncc`](https://github.com/vercel/ncc) into `dist/index.js`, which is what `action.yml` actually runs.
 
 ## Inputs
 
@@ -13,6 +13,7 @@ Published on the GitHub Marketplace as `jkbeeman92/create-release`. Runs on Node
 | `semver` | ❌ | `""` | Full semver string from the semver-labeling action (e.g. `2.3.1` or `2.3.1-beta.1`). When provided, used as the tag instead of deriving one from the title. |
 | `semver_type` | ❌ | `""` | Release type from the semver-labeling action: `major`, `minor`, `patch`, or `pre-release`. Drives the prerelease flag on the GitHub release. |
 | `tag_prefix` | ❌ | `v` | Prefix prepended to the semver tag (e.g. `v` produces `v2.3.1`). Only applies when `semver` is provided. |
+| `skip_existing` | ❌ | `false` | If a release for the derived tag already exists, skip it and succeed instead of failing. |
 
 ## Outputs
 
@@ -71,14 +72,28 @@ If used without the semver-labeling action, the tag is derived from the PR title
 
 ## Development
 
-- `index.js` is the entire action — no build step. After changing a
-  dependency, run `npm install` and commit the resulting `node_modules`
-  changes along with `package.json`/`package-lock.json`.
-- There's no automated test suite; verify changes by running `index.js`
-  directly with `INPUT_*` env vars. See `CLAUDE.md` for the full checklist.
+- Source lives in `index.js` (entry point) and `src/deriveRelease.js` (the
+  tag-derivation/validation logic, kept separate so it's unit-testable).
+  `dist/index.js` is the built bundle that `action.yml` actually runs —
+  after changing `index.js`, `src/`, or a dependency, run `npm run build`
+  and commit the resulting `dist/` changes. `node_modules` itself is
+  **not** committed (see `.gitignore`); only the bundle is.
+- Unit tests: `npm test` (Node's built-in test runner, no extra
+  dependencies). Covers the tag-derivation logic in `src/deriveRelease.js`.
+- CI (`.github/workflows/ci.yml`) runs the tests, rebuilds the bundle and
+  fails if `dist/` doesn't match what's committed, and exercises both the
+  semver and title-fallback code paths end-to-end.
 - Branching: `main` is the release branch (tags are cut from here);
   `develop` is the integration branch; feature/fix work branches off
   `develop` and merges back via PR. See `CLAUDE.md` for details.
 - Before merging a Dependabot PR, check whether the target version is a
   breaking major (this repo has been bitten by ESM-only major bumps in
   `@actions/core` and `@actions/github` before) — see `CLAUDE.md`.
+
+## Versioning
+
+Consumers pin a major version tag (`@v1`). On every GitHub Release
+published from this repo (see `.github/workflows/move-major-tag.yml`),
+that release's major version tag (`v1`, `v2`, ...) is automatically moved
+to point at the new release, so `@v1` always resolves to the latest
+non-prerelease `v1.x.y`.

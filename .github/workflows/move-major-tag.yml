@@ -1,0 +1,33 @@
+name: Move major version tag
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  move-tag:
+    if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Move major tag to this release
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::Release tag '$TAG' isn't vMAJOR.MINOR.PATCH — skipping major tag update."
+            exit 0
+          fi
+          MAJOR="v${BASH_REMATCH[1]}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -f "$MAJOR" "$TAG"
+          git push origin "refs/tags/$MAJOR" --force
+
+          echo "::notice::Moved $MAJOR to $TAG"
