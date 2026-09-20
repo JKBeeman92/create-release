@@ -7,17 +7,28 @@ action to derive the release tag and prerelease flag.
 
 ## Architecture
 
-- `index.js` — the entire action. No `src/`, no build step.
-- `action.yml` — Action metadata (`runs.using: node20`, `runs.main: index.js`).
-- `node_modules/` is **committed directly** — there is no `ncc`/`esbuild` bundling
-  step. What's on disk in `node_modules/` at `main` HEAD is exactly what the
-  Marketplace runtime executes. After any `npm install`/`npm update`, the
-  changed `node_modules/` files must be committed alongside `package.json` and
-  `package-lock.json`.
+- `index.js` — entry point: reads inputs, calls the GitHub API.
+- `src/deriveRelease.js` — pure tag-derivation/validation logic, kept
+  separate from `index.js` specifically so it's unit-testable without
+  mocking the GitHub API.
+- `test/deriveRelease.test.js` — unit tests (Node's built-in `node:test`
+  runner, no test framework dependency). Run with `npm test`.
+- `action.yml` — Action metadata (`runs.using: node20`, `runs.main:
+  dist/index.js`).
+- The action is **bundled with `ncc`** (`npm run build` → `dist/index.js`,
+  `dist/package.json`, `dist/licenses.txt`). `node_modules/` itself is
+  gitignored and never committed — only the bundle is. What's in
+  `dist/index.js` at `main` HEAD is exactly what the Marketplace runtime
+  executes. **After any change to `index.js`, `src/`, or a dependency, run
+  `npm run build` and commit the resulting `dist/` changes** — CI fails the
+  build if `dist/` doesn't match what a fresh build produces, but do this
+  locally too rather than relying on CI to catch it.
 - The package is an ES module (`"type": "module"` in `package.json`).
   `index.js` uses `import`, not `require`. This matters because both
   `@actions/core` (v3+) and `@actions/github` (v9+) are ESM-only —
-  `require()`-based code will fail with `ERR_REQUIRE_ESM` on those majors.
+  `require()`-based code fails with `ERR_REQUIRE_ESM` on those majors.
+  `ncc` correctly detects and bundles ESM source (confirmed working with
+  `@vercel/ncc` 0.45.0 against these exact dependencies).
 
 ## Marketplace implications
 
@@ -26,12 +37,17 @@ This action is consumed by other repositories via version tags
 
 - A broken commit on `main` at the tag consumers point to breaks every
   downstream workflow using this action, silently, on their next run.
-- Major-version tags (`v1`, `v2`, ...) should be moved forward deliberately
-  after a real release, not on every merge — check whether `v1` is a branch,
-  a moving tag, or a release before repointing it.
-- Any dependency bump must be validated by actually running `index.js`
-  (see "Testing locally" below), not just by checking `npm install` succeeds.
-  A clean install does not prove the runtime import graph still works.
+- `.github/workflows/move-major-tag.yml` automatically force-moves the
+  matching major tag (`v1`, `v2`, ...) to point at every published,
+  non-prerelease, non-draft GitHub Release whose tag matches
+  `vMAJOR.MINOR.PATCH`. Cutting a release IS how you move the major tag —
+  there is no separate manual step, and no other automation creates the
+  `vMAJOR.MINOR.PATCH` release tag itself (that's still a manual "Draft a
+  new release" in GitHub, or scripted separately if that's ever added).
+- Any dependency bump must be validated by actually running the bundle
+  (see "Testing locally" below), not just by checking `npm install`
+  succeeds. A clean install does not prove the runtime import graph still
+  works — `npm run build` plus a manual run does.
 
 ## Branching strategy
 
@@ -41,7 +57,9 @@ This action is consumed by other repositories via version tags
 - `feature/*`, `fix/*` — short-lived branches off `develop` for individual
   changes.
 - Releases: when `develop` is ready to ship, open a PR from `develop` into
-  `main`. Merging that PR is what triggers a new tagged release.
+  `main`. Merging that PR, then publishing a GitHub Release with a
+  `vMAJOR.MINOR.PATCH` tag on that commit, is what ships to consumers and
+  moves the major tag.
 
 Both `main` and `develop` are intended to be protected (PR required, no
 direct pushes, status checks green before merge) — see the repo's branch
@@ -56,42 +74,56 @@ whether the target major version is ESM-only or otherwise has a documented
 breaking change** — check the package's `RELEASES.md`/changelog first.
 If it is a breaking major:
 1. Do not merge the Dependabot PR directly.
-2. Make the required code changes (e.g. ESM conversion) on a branch off
-   `develop`, bump the dependency there, regenerate `node_modules` +
-   `package-lock.json` with `npm install`, and verify per "Testing locally".
+2. Make the required code changes on a branch off `develop`, bump the
+   dependency there, run `npm install` (regenerates `package-lock.json`;
+   `node_modules` is gitignored, nothing to commit there) and `npm run
+   build` (regenerates `dist/`), and verify per "Testing locally".
 3. Close the superseded Dependabot PR(s) with a comment pointing at the
    PR that landed the change.
 
 Minor/patch bumps are generally safe to merge as Dependabot proposes them,
-but still worth a quick `npm install && node --check index.js` before
-merging.
+but still run `npm install && npm test && npm run build` and verify per
+"Testing locally" before merging — Dependabot bumps `package.json` but
+won't rebuild `dist/` for you.
+
+The `dependency-upgrade-reviewer` subagent (`.claude/agents/`) automates
+the changelog/breaking-change check described above.
 
 ## Testing locally
 
-There is no test suite (`npm test` is a placeholder). To validate a change
-to `index.js` or a dependency bump:
-
 ```bash
-node --check index.js   # syntax / module-loading sanity check
+npm test                # unit tests for src/deriveRelease.js
+npm run build            # produces dist/index.js
+node --check dist/index.js
 INPUT_TITLE="v1.2.3 - test release" \
 INPUT_TOKEN="<a real token if testing against a real repo, else any string>" \
 INPUT_SEMVER="" \
 INPUT_SEMVER_TYPE="" \
 INPUT_TAG_PREFIX="v" \
+INPUT_SKIP_EXISTING="false" \
 GITHUB_REPOSITORY="owner/repo" \
-node index.js
+node dist/index.js
 ```
 
 Inputs are read via `INPUT_<NAME>` env vars (GitHub Actions' own convention
-for `core.getInput`). Without a real token this will fail at the API call
-with an auth error — that's expected and still proves imports and tag-name
-logic work; only failures during module loading (`ERR_REQUIRE_ESM`,
-`Cannot find module`, etc.) indicate a real regression at that stage.
+for `core.getInput`). Without a real token this will fail at the
+`getReleaseByTag`/`createRelease` API call with an auth error — that's
+expected and still proves imports and tag-name logic work, because
+`index.js` logs the derived tag/prerelease intent *before* making any
+network call. Only a failure before that log line (`ERR_REQUIRE_ESM`,
+`Cannot find module`, a thrown validation error with the wrong message,
+etc.) indicates a real regression.
+
+The `release-verifier` subagent (`.claude/agents/`) runs this full
+checklist plus the `action.yml`/README consistency check.
 
 ## Making changes
 
-- Keep `index.js` dependency-light and single-file unless a change genuinely
-  requires more structure — this is a small, focused action.
-- Any change to `action.yml` inputs/outputs must be reflected in `README.md`'s
-  input/output tables.
+- Keep the pure logic in `src/deriveRelease.js` unit-tested; keep
+  `index.js` as thin I/O glue around it.
+- Any change to `action.yml` inputs/outputs must be reflected in
+  `README.md`'s input/output tables (CI checks this).
 - Update `README.md` usage examples if behavior changes.
+- Rebuild `dist/` (`npm run build`) and commit it with every change that
+  touches `index.js`, `src/`, or a dependency — CI enforces this but treat
+  it as your own responsibility, not a safety net.

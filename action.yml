@@ -23,6 +23,10 @@ inputs:
     description: 'Prefix to prepend to the semver tag (e.g. "v" produces "v2.3.1"). Only applies when semver input is provided.'
     required: false
     default: 'v'
+  skip_existing:
+    description: 'If a release for the derived tag already exists, skip it and succeed instead of failing.'
+    required: false
+    default: 'false'
 outputs:
   release_url:
     description: 'URL of the created GitHub release'
@@ -30,4 +34,4 @@ outputs:
     description: 'The tag name used for the release'
 runs:
   using: 'node20'
-  main: 'index.js'
+  main: 'dist/index.js'
