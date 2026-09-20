@@ -97,11 +97,11 @@ If used without the semver-labeling action, the tag is derived from the PR title
 
 ## Versioning
 
-This repo releases itself with itself: `.github/workflows/release.yml`
-runs on every PR merged into `main`, uses
+`.github/workflows/release.yml` runs on every PR merged into `main`, uses
 [`semver-labeling`](https://github.com/jkbeeman92/semver-labeling) to
-parse the (versioned) PR title, and calls this repo's own released
-`create-release@v1` action to publish the GitHub Release — no manual
+parse the (versioned) PR title, and runs this repo's own code directly
+(`uses: ./`, not the published `@v1` tag — avoids depending on a prior
+release to publish the next one) to publish the GitHub Release — no manual
 release step. `.github/workflows/move-major-tag.yml` then force-moves that
 release's major version tag (`v1`, `v2`, ...) to point at it, so consumers
 pinned to `@v1` always resolve to the latest non-prerelease `v1.x.y`.

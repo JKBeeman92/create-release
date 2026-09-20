@@ -38,15 +38,16 @@ This action is consumed by other repositories via version tags
 - A broken commit on `main` at the tag consumers point to breaks every
   downstream workflow using this action, silently, on their next run.
 - `.github/workflows/release.yml` publishes the release itself: on every PR
-  merged into `main`, it runs this repo's own companion action
-  ([`semver-labeling`](https://github.com/jkbeeman92/semver-labeling)) to
-  parse the PR title, then `jkbeeman92/create-release@v1` — **the released
-  `v1` tag, not `@main`/the working branch** — to publish the release. This
-  is deliberately not self-referential in a circular way: the workflow runs
-  on the merge commit and calls whatever `v1` currently points to (the
-  *previous* release), so a change to this repo's own code that just
-  merged into `main` is shipped by the old `v1` and only becomes part of
-  `v1` itself after the tag-move step below runs.
+  merged into `main`, it runs the companion
+  [`semver-labeling`](https://github.com/jkbeeman92/semver-labeling) action
+  to parse the PR title, then **this repo's own code via a local action
+  reference (`uses: ./`)** — not the published `jkbeeman92/create-release@v1`
+  — to publish the release. Deliberately not via the Marketplace tag:
+  this repo IS create-release, so having it release itself by depending on
+  its own already-published tag would make every release depend on a prior
+  release already existing/working. `uses: ./` runs `dist/index.js` exactly
+  as committed on the merge commit, with no such dependency — and no
+  tag-move-ordering subtlety to reason about.
 - `.github/workflows/move-major-tag.yml` then force-moves the matching
   major tag (`v1`, `v2`, ...) to point at every published, non-prerelease,
   non-draft GitHub Release whose tag matches `vMAJOR.MINOR.PATCH`. This is
