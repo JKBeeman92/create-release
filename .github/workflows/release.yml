@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Detect and label semver
+        id: semver
+        uses: jkbeeman92/semver-labeling@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release
+        if: steps.semver.outputs.matched == 'true'
+        uses: jkbeeman92/create-release@v1
+        with:
+          title: ${{ github.event.pull_request.title }}
+          semver: ${{ steps.semver.outputs.semver }}
+          semver_type: ${{ steps.semver.outputs.semver_type }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          skip_existing: true
